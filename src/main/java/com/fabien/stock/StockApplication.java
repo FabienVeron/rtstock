@@ -1,6 +1,8 @@
 package com.fabien.stock;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.Getter;
 import lombok.Value;
 import org.reactivestreams.Subscriber;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -29,6 +32,7 @@ public class StockApplication implements ApplicationRunner {
 	public static void main(String[] args) {
 		SpringApplication.run(StockApplication.class, args);
 	}
+
 
 	public void intFluxWithBackpressure() {
 		Flux<Integer> f = Flux.range(1, 100).map(i -> i * 2).delayElements(Duration.ofMillis(100));
@@ -60,15 +64,21 @@ public class StockApplication implements ApplicationRunner {
 		});
 	}
 
-
 	@Override
 	public void run(ApplicationArguments args) throws Exception {
-		this.intFluxWithBackpressure();
+//		this.intFluxWithBackpressure();
 	}
 }
 
 @Service
 class StockPriceService {
+
+	RestTemplate restTemplate = new RestTemplate();
+
+	double bitcoinPrice() {
+		Tickers tickers= restTemplate.getForObject("https://blockchain.info/ticker",Tickers.class);
+		return tickers.USD.last;
+	}
 
 	Flux<Long> rtLong() {
 		return Flux
@@ -94,6 +104,10 @@ class StockPriceService {
 				});
 	}
 
+	Flux<Double> rtBitcoinPrice() {
+		return Flux.interval(Duration.ofSeconds(1))
+				.map(count -> bitcoinPrice()).distinct();
+	}
 }
 
 @RestController
@@ -106,6 +120,11 @@ class StockController {
 	@RequestMapping(value = "/hello",produces = MediaType.APPLICATION_JSON_VALUE)
 	public Mono<String> hello() {
 		return Mono.just("Hello @" + new Date());
+	}
+
+	@RequestMapping(value = "/bitcoin",method = RequestMethod.GET,produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+	public Flux<Double> getBitcoinPrice() {
+		return stockPriceService.rtBitcoinPrice();
 	}
 
 	@RequestMapping(value = "/long",method = RequestMethod.GET,produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -125,4 +144,15 @@ class StockController {
 class Stock {
 	String name;
 	double price;
+}
+
+@Data
+class Tickers {
+	@JsonProperty("USD")
+	Ticker USD;
+
+	@Data
+	class Ticker {
+		double last;
+	}
 }
